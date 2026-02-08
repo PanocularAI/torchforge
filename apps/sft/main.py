@@ -193,7 +193,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         # Get DP mesh for data sharding
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
-            dp_mesh = self.parallel_dims.world_mesh.get_group("dp")
+            dp_mesh = self.parallel_dims.get_mesh("batch")
 
         # Pass config directly to dataset constructor
         dataset = sft_iterable_dataset(
@@ -237,7 +237,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 
         if parallel_dims.pp_enabled:
             # Pipeline Parallel forward / backward inside step() call
-            with self.train_context(optional_context_parallel_ctx):
+            with self.train_context():
                 targets, losses = (
                     (labels, []) if self.pp_has_last_stage else (None, None)
                 )
@@ -260,7 +260,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 
         else:
             # Non-PP forward / backward
-            with self.train_context(optional_context_parallel_ctx):
+            with self.train_context():
                 assert len(model_parts) == 1
                 with self.maybe_enable_amp:
                     pred = model_parts[0](inputs)
@@ -327,7 +327,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         # Get DP process group for epoch synchronization
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
-            dp_mesh = self.parallel_dims.world_mesh.get_group("dp")
+            dp_mesh = self.parallel_dims.get_mesh("batch").get_group('batch')
 
         # For non-PP: disable gradients to save memory
         # TODO: For PP, if disabling gradients, throws error

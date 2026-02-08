@@ -11,9 +11,9 @@ authors = [
 keywords = ["pytorch", "training", "llm"]
 dependencies = [
     # PyTorch
-    "torch==2.9.0",
+    # "torch==2.9.0", # removed to operate with torch nightly
     "torchdata>=0.8.0",
-    "torchtitan==0.2.0",
+    # "torchtitan==0.2.0", # removed to operate with torchtitan nightly
     "torchmonarch==0.2.0",
     # Issue 656: switch to ping torchstore nightly
     "torchstore",

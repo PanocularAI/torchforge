@@ -146,8 +146,8 @@ class HfIterableDataset(InfiniteTuneIterableDataset):
         # Extract rank/world_size from DP mesh
         world_size, rank = 1, 0
         if self._dp_mesh is not None:
-            world_size = dist.get_world_size(group=self._dp_mesh)
-            rank = dist.get_rank(group=self._dp_mesh)
+            world_size = self._dp_mesh.size()
+            rank = self._dp_mesh.get_local_rank()
             logger.debug(
                 f"Using DP mesh for sharding: rank={rank}, world_size={world_size}"
             )
