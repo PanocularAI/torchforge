@@ -254,7 +254,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
                 else torch.tensor(-1.0, device=self.device)
             )
 
-            # TODO: PP requires gradients enabled and cant deactive with no_grad
+            # TODO: PP requires gradients enabled and can't deactivate with no_grad
             if skip_backward:
                 loss = loss.detach()
 
@@ -327,7 +327,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         # Get DP process group for epoch synchronization
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
-            dp_mesh = self.parallel_dims.get_mesh("batch").get_group('batch')
+            dp_mesh = self.parallel_dims.get_mesh("batch").get_group("batch")
 
         # For non-PP: disable gradients to save memory
         # TODO: For PP, if disabling gradients, throws error
@@ -492,19 +492,23 @@ async def run(cfg: DictConfig) -> None:
     mlogger = await get_or_create_metric_logger(process_name="Controller")
     await mlogger.init_backends.call_one(metric_logging_cfg)
 
-    recipe = await ForgeSFTRecipe.options(**process_cfg).as_actor(cfg)
+    recipe = await ForgeSFTRecipe.options(**process_cfg).launch(config=cfg)
 
-    logging.info("Created recipe, running setup.")
-    await recipe.setup.call()
+    try:
+        logging.info("Created recipe, running setup.")
+        await recipe.setup.call()
 
-    logging.info("Recipe has been setup. Training now.")
-    await recipe.train.call()
+        logging.info("Recipe has been setup. Training now.")
+        await recipe.train.call()
 
-    logging.info("Done training. Clean up")
-    await recipe.cleanup.call()
-
-    await recipe.mesh.stop()
-    logging.info("All done!")
+        logging.info("Done training. Clean up")
+        await recipe.cleanup.call()
+    finally:
+        await recipe.stop()
+        await asyncio.sleep(
+            1
+        )  # Give time for cleanup, maybe helps for  Warning: there appear 1 leaked semaphore
+        logging.info("All done!")
 
 
 @parse
