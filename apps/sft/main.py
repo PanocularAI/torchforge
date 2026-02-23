@@ -22,6 +22,7 @@ import torch
 import torchtitan.experiments.forge.train_spec as forge_train_spec
 from forge.controller import ForgeActor
 from forge.data.collate import collate_padded
+from forge.data.datasets.auto_transform import AutoToMessages
 from forge.data.datasets.sft_dataset import AlpacaToMessages, sft_iterable_dataset
 from forge.data.tokenizer import HuggingFaceModelTokenizer
 from forge.data.utils import StopAfterOneEpoch
@@ -156,55 +157,57 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         Raises:
             ValueError: If multiple datasets provided (not yet supported)
         """
-
-        # TODO felipemello: Currently only support single dataset
-        if len(dataset_configs) > 1:
-            raise ValueError(
-                f"Multiple training datasets not supported yet. "
-                f"Got {len(dataset_configs)} datasets. "
-            )
-
-        dataset_config = dataset_configs[0]
-
-        # TODO: Evaluate if tokenizers should be created once and shared for every dataset
-        # Load tokenizer
         tokenizer = HuggingFaceModelTokenizer(
-            tokenizer_json_path=os.path.join(
-                self.job_config.model.hf_assets_path, "tokenizer.json"
-            ),
-            tokenizer_config_json_path=os.path.join(
-                self.job_config.model.hf_assets_path, "tokenizer_config.json"
-            ),
-            generation_config_path=os.path.join(
-                self.job_config.model.hf_assets_path, "generation_config.json"
-            ),
-            chat_template_path=(
-                path
-                if os.path.exists(
-                    path := os.path.join(
-                        self.job_config.model.hf_assets_path, "chat_template.jinja"
-                    )
+        tokenizer_json_path=os.path.join(
+            self.job_config.model.hf_assets_path, "tokenizer.json"
+        ),
+        tokenizer_config_json_path=os.path.join(
+            self.job_config.model.hf_assets_path, "tokenizer_config.json"
+        ),
+        generation_config_path=os.path.join(
+            self.job_config.model.hf_assets_path, "generation_config.json"
+        ),
+        chat_template_path=(
+            path
+            if os.path.exists(
+                path := os.path.join(
+                    self.job_config.model.hf_assets_path, "chat_template.jinja"
                 )
-                else None
-            ),
-            max_seq_len=self.job_config.training.seq_len,
-        )
+            )
+            else None
+        ),
+        max_seq_len=self.job_config.training.seq_len,
+    )
 
-        # Get DP mesh for data sharding
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
             dp_mesh = self.parallel_dims.get_mesh("batch")
 
-        # Pass config directly to dataset constructor
-        dataset = sft_iterable_dataset(
-            model_transform=tokenizer,
-            message_transform=AlpacaToMessages(),
-            dp_mesh=dp_mesh,
-            **dataset_config,
-        )
+        # Create datasets
+        datasets = []
+        for dataset_config in dataset_configs:  # Loop through each dataset config
+            dataset = sft_iterable_dataset(  # CREATE EACH DATASET
+                model_transform=tokenizer,
+                # message_transform=AlpacaToMessages(),
+                message_transform=AutoToMessages(),
+                dp_mesh=dp_mesh,
+                **dataset_config,
+            )
+            datasets.append(dataset)
+
+        # Interleave multiple datasets with weights
+        if len(datasets) > 1:
+            from forge.data.datasets import InterleavedDataset
+            combined_dataset = InterleavedDataset(
+                datasets=datasets,
+                seed=42,
+                dataset_name="training_datasets"
+            )
+        else:
+            combined_dataset = datasets[0]
 
         dataloader = StatefulDataLoader(
-            dataset=dataset,
+            dataset=combined_dataset,
             batch_size=self.job_config.training.local_batch_size,
             collate_fn=collate_padded,
         )
