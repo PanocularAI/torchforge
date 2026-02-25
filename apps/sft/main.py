@@ -179,6 +179,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
             max_seq_len=self.job_config.training.seq_len,
         )
 
+        # Get DP mesh for data sharding
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
             dp_mesh = self.parallel_dims.get_mesh("batch")
@@ -197,10 +198,14 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 
         # Interleave multiple datasets with weights
         if len(datasets) > 1:
+            # Seed is guaranteed to be set in config by run() function
+            seed = self.job_config.training.seed
+            logger.info(f"Rank {self._rank} using seed for dataset interleaving: {seed}")
+            
             from forge.data.datasets import InterleavedDataset
             combined_dataset = InterleavedDataset(
                 datasets=datasets,
-                seed=42,
+                seed=seed,
                 dataset_name="training_datasets"
             )
         else:
@@ -489,6 +494,15 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 async def run(cfg: DictConfig) -> None:
     logging.info("Spawning recipe...")
     process_cfg = cfg.pop("processes")
+
+    # Generate seed for dataset interleaving if not provided in config
+    # This ensures all actors use the same seed without needing to broadcast
+    if "training" in cfg and "seed" not in cfg.training:
+        seed = torch.randint(0, 2**31 - 1, (1,)).item()
+        cfg.training.seed = seed
+        logging.info(f"Generated random seed for dataset interleaving: {seed}")
+    elif "training" in cfg and "seed" in cfg.training:
+        logging.info(f"Using seed from config: {cfg.training.seed}")
 
     # Initialize metric logger in main process
     metric_logging_cfg = cfg.get("metric_logging", {})
