@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-# TorchForge imports (names may vary slightly by version)
-from forge.data.utils import TuneMessage, mask_messages
 from forge.data.datasets.sft_dataset import AlpacaToMessages
+
+# TorchForge imports (names may vary slightly by version)
+from forge.data.utils import mask_messages, TuneMessage
 
 
 @dataclass
@@ -39,7 +40,7 @@ class AutoToMessages:
         AutoToMessages(field_map={"user": "question", "assistant": "answer"})
         AutoToMessages(field_map={"user": "instruction", "input": "context", "assistant": "response"})
 
-    Notes:git 
+    Notes:
       - When `field_map` is set, auto-detection is completely bypassed.
       - Auto-detection can be wrong on ambiguous schemas. For best quality, use field_map.
       - This transform *does not tokenize*. It only builds TuneMessages and applies masking.
@@ -112,7 +113,10 @@ class AutoToMessages:
         # 0) Optional system prompt fields
         sys_msg = None
         if self.include_system:
-            sys_text = self._first_str(sample, ["system", "system_prompt", "systemPrompt", "instruction_system"])
+            sys_text = self._first_str(
+                sample,
+                ["system", "system_prompt", "systemPrompt", "instruction_system"],
+            )
             if sys_text:
                 sys_msg = TuneMessage(role="system", content=sys_text, eot=True)
 
@@ -140,7 +144,7 @@ class AutoToMessages:
                 # Use the existing AlpacaToMessages implementation
                 alpaca_transform = AlpacaToMessages(
                     column_map=None,  # Use default field names
-                    masking_strategy=self.masking_strategy
+                    masking_strategy=self.masking_strategy,
                 )
                 result = alpaca_transform(sample)
                 msgs = result.get("messages", [])
@@ -153,10 +157,14 @@ class AutoToMessages:
 
         # 4) Prompt-completion
         prompt = self._first_str(sample, ["prompt", "instruction_prompt", "query"])
-        completion = self._first_str(sample, ["completion", "response", "answer", "output_text"])
+        completion = self._first_str(
+            sample, ["completion", "response", "answer", "output_text"]
+        )
         if prompt and completion:
-            msgs = [TuneMessage(role="user", content=prompt, eot=True),
-                    TuneMessage(role="assistant", content=completion, eot=True)]
+            msgs = [
+                TuneMessage(role="user", content=prompt, eot=True),
+                TuneMessage(role="assistant", content=completion, eot=True),
+            ]
             if sys_msg:
                 msgs.insert(0, sys_msg)
             return self._validate(msgs)
@@ -164,24 +172,34 @@ class AutoToMessages:
         # 5) QA
         question = self._first_str(sample, ["question", "query", "prompt_question"])
         if question:
-            context = self._first_str(sample, ["context", "passage", "article", "paragraph"])
+            context = self._first_str(
+                sample, ["context", "passage", "article", "paragraph"]
+            )
             answer = self._extract_answer(sample)
             if answer:
                 user = question if not context else f"{question}\n\nContext:\n{context}"
-                msgs = [TuneMessage(role="user", content=user, eot=True),
-                        TuneMessage(role="assistant", content=answer, eot=True)]
+                msgs = [
+                    TuneMessage(role="user", content=user, eot=True),
+                    TuneMessage(role="assistant", content=answer, eot=True),
+                ]
                 if sys_msg:
                     msgs.insert(0, sys_msg)
                 return self._validate(msgs)
 
         # 6) Multiple-choice QA
         if question and any(k in sample for k in ("choices", "options")):
-            choices_txt = self._format_choices(sample.get("choices", None) or sample.get("options", None))
-            key = self._first_str(sample, ["answerKey", "label", "answer_key", "correct"])
+            choices_txt = self._format_choices(
+                sample.get("choices", None) or sample.get("options", None)
+            )
+            key = self._first_str(
+                sample, ["answerKey", "label", "answer_key", "correct"]
+            )
             if choices_txt and key:
                 user = f"{question}\n\nChoices:\n{choices_txt}"
-                msgs = [TuneMessage(role="user", content=user, eot=True),
-                        TuneMessage(role="assistant", content=key, eot=True)]
+                msgs = [
+                    TuneMessage(role="user", content=user, eot=True),
+                    TuneMessage(role="assistant", content=key, eot=True),
+                ]
                 if sys_msg:
                     msgs.insert(0, sys_msg)
                 return self._validate(msgs)
@@ -193,8 +211,14 @@ class AutoToMessages:
             # but this is usually pretraining data, not SFT.
             if self.require_assistant:
                 return None
-            msgs = [TuneMessage(role="user", content="Rewrite/summarize the following text:", eot=True),
-                    TuneMessage(role="assistant", content=text, eot=True)]
+            msgs = [
+                TuneMessage(
+                    role="user",
+                    content="Rewrite/summarize the following text:",
+                    eot=True,
+                ),
+                TuneMessage(role="assistant", content=text, eot=True),
+            ]
             if sys_msg:
                 msgs.insert(0, sys_msg)
             return self._validate(msgs)
@@ -244,7 +268,9 @@ class AutoToMessages:
             if system_text:
                 msgs.append(TuneMessage(role="system", content=system_text, eot=True))
         elif self.include_system:
-            sys_text = self._first_str(sample, ["system", "system_prompt", "systemPrompt"])
+            sys_text = self._first_str(
+                sample, ["system", "system_prompt", "systemPrompt"]
+            )
             if sys_text:
                 msgs.append(TuneMessage(role="system", content=sys_text, eot=True))
 
@@ -282,7 +308,9 @@ class AutoToMessages:
                 continue
             src = self._as_str(m.get("from", "")).lower()
             role = self.role_map_sharegpt.get(src, "user")
-            content_s = self._as_str(m.get("value", m.get("content", m.get("text", ""))))
+            content_s = self._as_str(
+                m.get("value", m.get("content", m.get("text", "")))
+            )
             if not content_s:
                 continue
             msgs.append(TuneMessage(role=role, content=content_s, eot=True))
@@ -367,14 +395,22 @@ class AutoToMessages:
                     think_block = "<think>" + "\n".join(pending_think) + "</think>\n"
                     pending_think = []
                     new_content = think_block + self._as_str(getattr(m, "content", ""))
-                    m = TuneMessage(role="assistant", content=new_content, eot=getattr(m, "eot", True))
+                    m = TuneMessage(
+                        role="assistant",
+                        content=new_content,
+                        eot=getattr(m, "eot", True),
+                    )
                 normalized.append(m)
             else:
                 if pending_think:
                     # Orphan thinking block with no following assistant — discard
                     pending_think = []
                 if m.role not in KNOWN_ROLES:
-                    m = TuneMessage(role="assistant", content=getattr(m, "content", ""), eot=getattr(m, "eot", True))
+                    m = TuneMessage(
+                        role="assistant",
+                        content=getattr(m, "content", ""),
+                        eot=getattr(m, "eot", True),
+                    )
                 normalized.append(m)
         msgs = [m for m in normalized if _has_content(m)]
 
@@ -393,8 +429,14 @@ class AutoToMessages:
         for m in msgs:
             if collapsed and collapsed[-1].role == m.role:
                 prev = collapsed[-1]
-                combined = self._as_str(getattr(prev, "content", "")) + "\n" + self._as_str(getattr(m, "content", ""))
-                collapsed[-1] = TuneMessage(role=prev.role, content=combined, eot=getattr(m, "eot", True))
+                combined = (
+                    self._as_str(getattr(prev, "content", ""))
+                    + "\n"
+                    + self._as_str(getattr(m, "content", ""))
+                )
+                collapsed[-1] = TuneMessage(
+                    role=prev.role, content=combined, eot=getattr(m, "eot", True)
+                )
             else:
                 collapsed.append(m)
         msgs = collapsed

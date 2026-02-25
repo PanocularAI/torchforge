@@ -200,13 +200,14 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         if len(datasets) > 1:
             # Seed is guaranteed to be set in config by run() function
             seed = self.job_config.training.seed
-            logger.info(f"Rank {self._rank} using seed for dataset interleaving: {seed}")
-            
+            logger.info(
+                f"Rank {self._rank} using seed for dataset interleaving: {seed}"
+            )
+
             from forge.data.datasets import InterleavedDataset
+
             combined_dataset = InterleavedDataset(
-                datasets=datasets,
-                seed=seed,
-                dataset_name="training_datasets"
+                datasets=datasets, seed=seed, dataset_name="training_datasets"
             )
         else:
             combined_dataset = datasets[0]
@@ -335,7 +336,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         # Get DP process group for epoch synchronization
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
-            dp_mesh = self.parallel_dims.get_mesh("batch").get_group('batch')
+            dp_mesh = self.parallel_dims.get_mesh("batch").get_group("batch")
 
         # For non-PP: disable gradients to save memory
         # TODO: For PP, if disabling gradients, throws error
