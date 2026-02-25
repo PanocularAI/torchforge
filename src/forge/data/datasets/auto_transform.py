@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # TorchForge imports (names may vary slightly by version)
 from forge.data.utils import TuneMessage, mask_messages
+from forge.data.datasets.sft_dataset import AlpacaToMessages
 
 
 @dataclass
@@ -94,6 +95,8 @@ class AutoToMessages:
             raise ValueError("AutoToMessages could not convert sample to messages.")
 
         # Apply masking in-place (train on assistant tokens typically)
+        # Note: For Alpaca-style data, masking is already applied by AlpacaToMessages.
+        # Calling mask_messages again with the same strategy is safe and idempotent.
         mask_messages(msgs, self.masking_strategy)
         return {"messages": msgs}
 
@@ -132,15 +135,21 @@ class AutoToMessages:
         # 3) Alpaca-style
         if any(k in sample for k in ("instruction", "output")):
             inst = self._as_str(sample.get("instruction", ""))
-            inp = self._as_str(sample.get("input", ""))
             out = self._as_str(sample.get("output", ""))
             if inst and out:
-                user = inst if not inp else f"{inst}\n\n{inp}"
-                msgs = [TuneMessage(role="user", content=user, eot=True),
-                        TuneMessage(role="assistant", content=out, eot=True)]
-                if sys_msg:
-                    msgs.insert(0, sys_msg)
-                return self._validate(msgs)
+                # Use the existing AlpacaToMessages implementation
+                alpaca_transform = AlpacaToMessages(
+                    column_map=None,  # Use default field names
+                    masking_strategy=self.masking_strategy
+                )
+                result = alpaca_transform(sample)
+                msgs = result.get("messages", [])
+                if msgs:
+                    # Add system message if needed
+                    if sys_msg and (not msgs or msgs[0].role != "system"):
+                        msgs.insert(0, sys_msg)
+                    # Note: AlpacaToMessages already applied masking, so messages are ready
+                    return self._validate(msgs)
 
         # 4) Prompt-completion
         prompt = self._first_str(sample, ["prompt", "instruction_prompt", "query"])
