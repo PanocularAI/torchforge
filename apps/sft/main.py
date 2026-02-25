@@ -158,26 +158,26 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
             ValueError: If multiple datasets provided (not yet supported)
         """
         tokenizer = HuggingFaceModelTokenizer(
-        tokenizer_json_path=os.path.join(
-            self.job_config.model.hf_assets_path, "tokenizer.json"
-        ),
-        tokenizer_config_json_path=os.path.join(
-            self.job_config.model.hf_assets_path, "tokenizer_config.json"
-        ),
-        generation_config_path=os.path.join(
-            self.job_config.model.hf_assets_path, "generation_config.json"
-        ),
-        chat_template_path=(
-            path
-            if os.path.exists(
-                path := os.path.join(
-                    self.job_config.model.hf_assets_path, "chat_template.jinja"
+            tokenizer_json_path=os.path.join(
+                self.job_config.model.hf_assets_path, "tokenizer.json"
+            ),
+            tokenizer_config_json_path=os.path.join(
+                self.job_config.model.hf_assets_path, "tokenizer_config.json"
+            ),
+            generation_config_path=os.path.join(
+                self.job_config.model.hf_assets_path, "generation_config.json"
+            ),
+            chat_template_path=(
+                path
+                if os.path.exists(
+                    path := os.path.join(
+                        self.job_config.model.hf_assets_path, "chat_template.jinja"
+                    )
                 )
-            )
-            else None
-        ),
-        max_seq_len=self.job_config.training.seq_len,
-    )
+                else None
+            ),
+            max_seq_len=self.job_config.training.seq_len,
+        )
 
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
