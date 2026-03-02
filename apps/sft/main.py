@@ -27,6 +27,7 @@ from forge.data.tokenizer import HuggingFaceModelTokenizer
 from forge.data.utils import StopAfterOneEpoch
 from forge.observability import get_or_create_metric_logger, record_metric, Reduce
 from forge.util.config import parse
+from forge.util.logging import get_logger
 from monarch.actor import current_rank, current_size, endpoint
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
@@ -47,8 +48,7 @@ MetricLogger = Any
 Profiler = Any
 Tokenizer = Any
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger = get_logger("INFO")
 
 
 class ForgeSFTRecipe(ForgeActor, ForgeEngine):
@@ -484,7 +484,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 
 
 async def run(cfg: DictConfig) -> None:
-    logging.info("Spawning recipe...")
+    logger.info("Spawning recipe...")
     process_cfg = cfg.pop("processes")
 
     # Initialize metric logger in main process
@@ -492,23 +492,23 @@ async def run(cfg: DictConfig) -> None:
     mlogger = await get_or_create_metric_logger(process_name="Controller")
     await mlogger.init_backends.call_one(metric_logging_cfg)
 
-    recipe = await ForgeSFTRecipe.options(**process_cfg).launch(config=cfg)
+    recipe = await ForgeSFTRecipe.options(**process_cfg).as_actor(config=cfg)
 
     try:
-        logging.info("Created recipe, running setup.")
+        logger.info("Created recipe, running setup.")
         await recipe.setup.call()
 
-        logging.info("Recipe has been setup. Training now.")
+        logger.info("Recipe has been setup. Training now.")
         await recipe.train.call()
 
-        logging.info("Done training. Clean up")
+        logger.info("Done training. Clean up")
         await recipe.cleanup.call()
     finally:
         await recipe.stop()
         await asyncio.sleep(
             1
         )  # Give time for cleanup, maybe helps for  Warning: there appear 1 leaked semaphore
-        logging.info("All done!")
+        logger.info("All done!")
 
 
 @parse
