@@ -12,7 +12,6 @@ python -m apps.sft.main --config apps/sft/llama3_8b.yaml
 
 import asyncio
 import contextlib
-import logging
 import math
 import os
 import sys
@@ -27,6 +26,7 @@ from forge.data.tokenizer import HuggingFaceModelTokenizer
 from forge.data.utils import StopAfterOneEpoch
 from forge.observability import get_or_create_metric_logger, record_metric, Reduce
 from forge.util.config import parse
+from forge.util.logging import get_logger
 from monarch.actor import current_rank, current_size, endpoint
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
@@ -47,8 +47,7 @@ MetricLogger = Any
 Profiler = Any
 Tokenizer = Any
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger = get_logger("INFO")
 
 
 class ForgeSFTRecipe(ForgeActor, ForgeEngine):
@@ -254,7 +253,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
                 else torch.tensor(-1.0, device=self.device)
             )
 
-            # TODO: PP requires gradients enabled and cant deactive with no_grad
+            # TODO: PP requires gradients enabled and can't deactivate with no_grad
             if skip_backward:
                 loss = loss.detach()
 
@@ -327,7 +326,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         # Get DP process group for epoch synchronization
         dp_mesh = None
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
-            dp_mesh = self.parallel_dims.get_mesh("batch").get_group('batch')
+            dp_mesh = self.parallel_dims.get_mesh("batch").get_group("batch")
 
         # For non-PP: disable gradients to save memory
         # TODO: For PP, if disabling gradients, throws error
@@ -484,7 +483,7 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 
 
 async def run(cfg: DictConfig) -> None:
-    logging.info("Spawning recipe...")
+    logger.info("Spawning recipe...")
     process_cfg = cfg.pop("processes")
 
     # Initialize metric logger in main process
@@ -492,19 +491,23 @@ async def run(cfg: DictConfig) -> None:
     mlogger = await get_or_create_metric_logger(process_name="Controller")
     await mlogger.init_backends.call_one(metric_logging_cfg)
 
-    recipe = await ForgeSFTRecipe.options(**process_cfg).as_actor(cfg)
+    recipe = await ForgeSFTRecipe.options(**process_cfg).as_actor(config=cfg)
 
-    logging.info("Created recipe, running setup.")
-    await recipe.setup.call()
+    try:
+        logger.info("Created recipe, running setup.")
+        await recipe.setup.call()
 
-    logging.info("Recipe has been setup. Training now.")
-    await recipe.train.call()
+        logger.info("Recipe has been setup. Training now.")
+        await recipe.train.call()
 
-    logging.info("Done training. Clean up")
-    await recipe.cleanup.call()
-
-    await recipe.mesh.stop()
-    logging.info("All done!")
+        logger.info("Done training. Clean up")
+        await recipe.cleanup.call()
+    finally:
+        await recipe.stop()
+        await asyncio.sleep(
+            1
+        )  # Give time for cleanup, maybe helps for  Warning: there appear 1 leaked semaphore
+        logger.info("All done!")
 
 
 @parse
