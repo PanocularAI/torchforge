@@ -12,7 +12,6 @@ python -m apps.sft.main --config apps/sft/llama3_8b.yaml
 
 import asyncio
 import contextlib
-import logging
 import math
 import os
 import sys
