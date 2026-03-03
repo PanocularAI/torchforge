@@ -498,9 +498,9 @@ async def run(cfg: DictConfig) -> None:
     if "training" in cfg and "seed" not in cfg.training:
         seed = torch.randint(0, 2**31 - 1, (1,)).item()
         cfg.training.seed = seed
-        logging.info(f"Generated random seed for dataset interleaving: {seed}")
+        logger.info(f"Generated random seed for dataset interleaving: {seed}")
     elif "training" in cfg and "seed" in cfg.training:
-        logging.info(f"Using seed from config: {cfg.training.seed}")
+        logger.info(f"Using seed from config: {cfg.training.seed}")
 
     # Initialize metric logger in main process
     metric_logging_cfg = cfg.get("metric_logging", {})
