@@ -21,7 +21,9 @@ import torch
 import torchtitan.experiments.forge.train_spec as forge_train_spec
 from forge.controller import ForgeActor
 from forge.data.collate import collate_padded
-from forge.data.datasets.sft_dataset import AlpacaToMessages, sft_iterable_dataset
+from forge.data.datasets import InterleavedDataset
+from forge.data.datasets.auto_transform import AutoToMessages
+from forge.data.datasets.sft_dataset import sft_iterable_dataset
 from forge.data.tokenizer import HuggingFaceModelTokenizer
 from forge.data.utils import StopAfterOneEpoch
 from forge.observability import get_or_create_metric_logger, record_metric, Reduce
@@ -155,18 +157,6 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         Raises:
             ValueError: If multiple datasets provided (not yet supported)
         """
-
-        # TODO felipemello: Currently only support single dataset
-        if len(dataset_configs) > 1:
-            raise ValueError(
-                f"Multiple training datasets not supported yet. "
-                f"Got {len(dataset_configs)} datasets. "
-            )
-
-        dataset_config = dataset_configs[0]
-
-        # TODO: Evaluate if tokenizers should be created once and shared for every dataset
-        # Load tokenizer
         tokenizer = HuggingFaceModelTokenizer(
             tokenizer_json_path=os.path.join(
                 self.job_config.model.hf_assets_path, "tokenizer.json"
@@ -194,16 +184,33 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
         if self.parallel_dims is not None and self.parallel_dims.dp_enabled:
             dp_mesh = self.parallel_dims.get_mesh("batch")
 
-        # Pass config directly to dataset constructor
-        dataset = sft_iterable_dataset(
-            model_transform=tokenizer,
-            message_transform=AlpacaToMessages(),
-            dp_mesh=dp_mesh,
-            **dataset_config,
-        )
+        # Create datasets
+        datasets = []
+        for dataset_config in dataset_configs:  # Loop through each dataset config
+            dataset = sft_iterable_dataset(  # CREATE EACH DATASET
+                model_transform=tokenizer,
+                # message_transform=AlpacaToMessages(),
+                message_transform=AutoToMessages(),
+                dp_mesh=dp_mesh,
+                **dataset_config,
+            )
+            datasets.append(dataset)
+
+        # Interleave multiple datasets with weights
+        if len(datasets) > 1:
+            # Seed is guaranteed to be set in config by run() function
+            seed = self.job_config.training.seed
+            logger.info(
+                f"Rank {self._rank} using seed for dataset interleaving: {seed}"
+            )
+            combined_dataset = InterleavedDataset(
+                datasets=datasets, seed=seed, dataset_name="training_datasets"
+            )
+        else:
+            combined_dataset = datasets[0]
 
         dataloader = StatefulDataLoader(
-            dataset=dataset,
+            dataset=combined_dataset,
             batch_size=self.job_config.training.local_batch_size,
             collate_fn=collate_padded,
         )
@@ -485,6 +492,15 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
 async def run(cfg: DictConfig) -> None:
     logger.info("Spawning recipe...")
     process_cfg = cfg.pop("processes")
+
+    # Generate seed for dataset interleaving if not provided in config
+    # This ensures all actors use the same seed without needing to broadcast
+    if "training" in cfg and "seed" not in cfg.training:
+        seed = torch.randint(0, 2**31 - 1, (1,)).item()
+        cfg.training.seed = seed
+        logging.info(f"Generated random seed for dataset interleaving: {seed}")
+    elif "training" in cfg and "seed" in cfg.training:
+        logging.info(f"Using seed from config: {cfg.training.seed}")
 
     # Initialize metric logger in main process
     metric_logging_cfg = cfg.get("metric_logging", {})
