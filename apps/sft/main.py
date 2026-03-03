@@ -22,8 +22,9 @@ import torch
 import torchtitan.experiments.forge.train_spec as forge_train_spec
 from forge.controller import ForgeActor
 from forge.data.collate import collate_padded
+from forge.data.datasets import InterleavedDataset
 from forge.data.datasets.auto_transform import AutoToMessages
-from forge.data.datasets.sft_dataset import AlpacaToMessages, sft_iterable_dataset
+from forge.data.datasets.sft_dataset import sft_iterable_dataset
 from forge.data.tokenizer import HuggingFaceModelTokenizer
 from forge.data.utils import StopAfterOneEpoch
 from forge.observability import get_or_create_metric_logger, record_metric, Reduce
@@ -203,9 +204,6 @@ class ForgeSFTRecipe(ForgeActor, ForgeEngine):
             logger.info(
                 f"Rank {self._rank} using seed for dataset interleaving: {seed}"
             )
-
-            from forge.data.datasets import InterleavedDataset
-
             combined_dataset = InterleavedDataset(
                 datasets=datasets, seed=seed, dataset_name="training_datasets"
             )

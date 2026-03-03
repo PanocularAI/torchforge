@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from forge.data.datasets.sft_dataset import AlpacaToMessages
 
@@ -290,9 +290,11 @@ class AutoToMessages:
             content = (
                 m.get("content", None)
                 if m.get("content", None) is not None
-                else m.get("text", None)
-                if m.get("text", None) is not None
-                else m.get("value", None)
+                else (
+                    m.get("text", None)
+                    if m.get("text", None) is not None
+                    else m.get("value", None)
+                )
             )
             content_s = self._as_str(content)
 
@@ -369,6 +371,7 @@ class AutoToMessages:
             return None
         if self.require_assistant and not any(m.role == "assistant" for m in msgs):
             return None
+
         # Basic sanity: no empty contents (content may be str or list)
         def _has_content(m: TuneMessage) -> bool:
             c = getattr(m, "content", "")
